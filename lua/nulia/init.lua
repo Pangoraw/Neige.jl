@@ -5,6 +5,7 @@
 --
 -- TODO: function to send visual selection
 -- TODO: detect julia environment based on current file?
+-- TODO: forward log messages to the file + line
 --
 --]]
 
@@ -313,15 +314,5 @@ function M.instantiate(opts)
       vim.fn.jobstart(cmd)
     end
 end
-
-local map = vim.keymap.set
-map('n', '<leader>js', function()
-    local nulia = require("nulia")
-    -- nulia.instantiate()
-    nulia.start()
-end)
-map('n', '<s-cr>', function()
-    require("nulia").send_command()
-end)
 
 return M
