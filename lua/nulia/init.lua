@@ -3,9 +3,12 @@
 --  Nulia.jl is a simple code runner for Julia code
 -- inside Neovim inspired by the julia-vscode extension
 --
+-- TODO: send visual selection
+-- TODO: detect julia environment based on current file?
+--
 --]]
 
-local VirtualText = require("Nulia.virtual_text")
+local VirtualText = require("nulia.virtual_text")
 local M = { chan = nil, run_id = 1 }
 
 local function initial_command(path)
@@ -35,9 +38,10 @@ local function folder_path()
 end
 
 local function julia_project_path()
-    return folder_path()
+    return folder_path() .. "../../"
 end
 
+-- Starts a Julia process in a side terminal
 function M.start()
     if M.chan ~= nil then
         P("error: term is already started")
@@ -80,6 +84,7 @@ local function get_nodes_text(bufnr, nodes)
     return vim.api.nvim_buf_get_text(bufnr, row_start, col_start, row_end, col_end, {})
 end
 
+-- Returns wether or not the node can have a docstring
 -- TODO: support f(x) = x syntax
 local function docstringable(node)
   if node == nil then
@@ -130,16 +135,18 @@ local function extract_nodes(opts)
 end
 
 -- NOTE: use ts_utils.goto_node(node, true, false) instead and make it work
-local function goto_node(node, goto_end)
+local function goto_node(bufnr, node, goto_end)
     if goto_end then
         local row, col, _ = node:end_()
-        vim.api.nvim_win_set_cursor(0, { row + 1, col })
+        vim.api.nvim_win_set_cursor(bufnr, { row + 1, col })
     else
         local row, col, _ = node:start()
-        vim.api.nvim_win_set_cursor(0, { row + 1, col - 1 })
+        vim.api.nvim_win_set_cursor(bufnr, { row + 1, col })
     end
 end
 
+-- Extract the node under the cursor and sends it to the Julia process for evaluation
+-- TODO: loading indicator like in vscode.
 function M.send_command(opts)
     opts = opts or {}
     local debug_hl = opts.debug_hl or false
@@ -190,11 +197,11 @@ function M.send_command(opts)
     })
 
     M.run_id = M.run_id + 1
-    local maybe_next = node:next_sibling()
+    local maybe_next = node:next_named_sibling()
     if maybe_next ~= nil then
-        goto_node(maybe_next, true)
+        goto_node(bufnr, maybe_next, false)
     else
-        goto_node(node, false)
+        goto_node(bufnr, node, true)
     end
 end
 
@@ -205,6 +212,8 @@ function M.instantiate(popup)
     local julia_code = [[
       import Pkg;
       Pkg.instantiate();
+      Pkg.status();
+
       import Nulia
       @info "Setup done!"
     ]]
