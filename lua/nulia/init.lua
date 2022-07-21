@@ -3,16 +3,26 @@
 --  Nulia.jl is a simple code runner for Julia code
 -- inside Neovim inspired by the julia-vscode extension
 --
--- TODO: send visual selection
+-- TODO: function to send visual selection
 -- TODO: detect julia environment based on current file?
 --
 --]]
 
-local VirtualText = require("nulia.virtual_text")
-local M = { chan = nil, run_id = 1 }
+local function initial_command(path, path_to_activate)
+    local julia_code = [[using Nulia; Nulia.start("]] .. path .. [["); import Pkg;]]
+    if path_to_activate ~= nil then
+        Pedit(path_to_activate)
+        julia_code = julia_code .. [[
+        Pkg.activate("]] .. path_to_activate .. [["; io=devnull);]]
+    else
+        julia_code = julia_code .. [[;Pkg.activate(; io=devnull);]]
+    end
+    return julia_code
+end
 
-local function initial_command(path)
-    return [[using Nulia; Nulia.start("]] .. path .. [[")]]
+local function get_filepath(bufnr)
+    bufnr = bufnr or 0
+    return vim.api.nvim_buf_get_name(bufnr)
 end
 
 -- http://stackoverflow.com/questions/6380820/ddg#23535333
@@ -28,8 +38,14 @@ local function get_parent(path)
     local parts = vim.split(path, "/", { plain = true })
     if string.len(parts[#parts]) > 0 then
         parts[#parts] = ""
+    else
+        table.remove(parts, #parts)
     end
     return table.concat(parts, "/")
+end
+
+local function fileexists(path)
+    return vim.fn.filereadable(path) ~= 0
 end
 
 -- Returns the path of the directory containing this file
@@ -38,30 +54,27 @@ local function folder_path()
 end
 
 local function julia_project_path()
-    return folder_path() .. "../../"
+    return folder_path() .. "/../../"
 end
 
--- Starts a Julia process in a side terminal
-function M.start()
-    if M.chan ~= nil then
-        P("error: term is already started")
-        return
+-- Returns the first folder than contains a Project.toml file by recursively
+-- looking at parents above the current buffer file path.
+local function julia_file_project_path(bufnr)
+    local path = get_filepath(bufnr)
+    local dir = get_parent(path)
+    local i = 0
+
+    while not fileexists(dir .. "/Project.toml") and dir ~= "" and dir ~= "/" and i < 10 do
+        dir = get_parent(dir)
+        i = i + 1
     end
 
-    local cmd = {
-        "julia",
-        "-q",
-        [[--project=]] .. julia_project_path(),
-        "-e", initial_command(vim.v.servername),
-        "-i",
-    }
-    vim.cmd("vnew")
-
-    -- TODO: this is a bit of a hack, can i specify the chan id at startup?
-    --       if it is not possible, the julia side should notify with the
-    --       channel id using nvim_lua_eval.
-    M.chan = vim.fn.termopen(cmd) + 1
+    if not fileexists(dir .. "/Project.toml") then
+        return nil
+    end
+    return dir
 end
+
 
 local ts_utils = require("nvim-treesitter.ts_utils")
 local function toplevel_node(node)
@@ -145,21 +158,71 @@ local function goto_node(bufnr, node, goto_end)
     end
 end
 
+-- Module def
+
+local M = {
+    julia_exe = "julia",
+    julia_env = julia_file_project_path,
+    split = "vnew",
+    chan = nil,
+    run_id = 1,
+}
+
+local VirtualText = require("nulia.virtual_text")
+
+-- Starts a Julia process in a side terminal
+function M.start(opts)
+    opts = opts or {}
+    local servername = opts.servername or vim.v.servername
+    local julia_env = opts.julia_env or M.julia_env
+    local split = opts.split or M.split
+    local bufnr = opts.bufnr or 0
+
+    if type(julia_env) == "function" then
+        julia_env = julia_env(bufnr)
+    end
+
+    if M.chan ~= nil then
+        print("error: Julia session is already started")
+        return
+    end
+
+    local cmd = {
+        M.julia_exe,
+        "-q",
+        "--project=" .. julia_project_path(),
+        "-e", initial_command(vim.v.servername, julia_env),
+        "-i",
+    }
+
+    if type(split) == "string" then
+        vim.cmd(split)
+    else
+        split()
+    end
+
+    -- TODO: this is a bit of a hack, can i specify the chan id at startup?
+    --       if it is not possible, the julia side should notify with the
+    --       channel id using nvim_lua_eval, this way we can block requests
+    --       until the channel is actually open (due to Julia side delay).
+    M.chan = vim.fn.termopen(cmd) + 1
+end
+
 -- Extract the node under the cursor and sends it to the Julia process for evaluation
 -- TODO: loading indicator like in vscode.
 function M.send_command(opts)
     opts = opts or {}
     local debug_hl = opts.debug_hl or false
+    local bufnr = opts.buf or 0
 
     if M.chan == nil then
-        P("Something went wrong")
+        print("error: Julia session is not yet created, call start()")
         return
     end
-    local bufnr = 0
     local nodes = extract_nodes({ debug_hl = debug_hl })
-    local code = get_nodes_text(0, nodes)
-    local res = vim.rpcrequest(M.chan, "eval_fetch", code)
+    local code = get_nodes_text(bufnr, nodes)
 
+    local res = vim.rpcrequest(M.chan, "eval_fetch", code)
     if #res ~= 2 then
         print("error: wrong return value")
         return
@@ -205,23 +268,41 @@ function M.send_command(opts)
     end
 end
 
--- TODO: setup options
-function M.setup() end
+-- Configure parameters
+function M.setup(opts)
+    if not fileexists(julia_project_path() .. "/Manifest.toml") then
+        print("Project has not been instantiated, call instantiate()")
+        return
+    end
 
-function M.instantiate(popup)
+    for k, _ in pairs(M) do
+        if opts[k] ~= nil then
+            M[k] = opts[k]
+        end
+    end
+end
+
+-- Installs the Julia dependencies, call it once at install
+function M.instantiate(opts)
+    opts = opts or {}
+    local popup = opts.popup or true
+
     local julia_code = [[
       import Pkg;
+      @info "Installing packages..."
+
+      Pkg.add(; url="https://github.com/bfredl/Neovim.jl", rev="0824be8605505c51dea1942a8268bed83f972412");
       Pkg.instantiate();
       Pkg.status();
 
       import Nulia
-      @info "Setup done!"
+      @info "Setup done, have fun!"
     ]]
 
     local cmd = {
-        "julia",
+        M.julia_exe,
         "-q",
-        [[--project=]] .. julia_project_path(),
+        "--project=" .. julia_project_path(),
         "-e",
         julia_code,
     }
@@ -235,11 +316,12 @@ end
 
 local map = vim.keymap.set
 map('n', '<leader>js', function()
-    nulia = M
+    local nulia = require("nulia")
+    -- nulia.instantiate()
     nulia.start()
 end)
 map('n', '<s-cr>', function()
-    nulia.send_command()
+    require("nulia").send_command()
 end)
 
 return M

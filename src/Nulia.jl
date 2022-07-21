@@ -45,12 +45,8 @@ function Neovim.on_request(::Handler, c, serial, name, args)
 end
 
 function start(socket_path)
-    nvim = Neovim.nvim_connect(socket_path, Handler())
-
+    Neovim.nvim_connect(socket_path, Handler())
     @debug "Started server" nvim.channel_id
-
-    # Neovim.send_request(nvim, "nvim_exec_lua", "nulia.ready = true")
-    Pkg.activate("@1.7")
     nothing
 end
 
