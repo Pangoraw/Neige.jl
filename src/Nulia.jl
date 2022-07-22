@@ -6,18 +6,20 @@ import Logging
 
 struct Handler end
 
-function repr_value(other)
-    repr(other)
-end
-function repr_value(::Nothing)
-    ""
+repr_value(other) = repr(other)
+repr_value(::Nothing) = ""
+
+function repr_error(ex)
+    io = IOBuffer()
+    showerror(io, ex)
+    String(take!(io))
 end
 
 function reply_value(c, serial, val)
     Neovim.reply_result(c, serial, [true, repr_value(val)])
 end
 function reply_error(c, serial, ex)
-    Neovim.reply_result(c, serial, [false, repr_value(ex)])
+    Neovim.reply_result(c, serial, [false, repr_error(ex)])
 end
 
 function eval_fetch(c, serial, code)

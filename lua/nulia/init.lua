@@ -12,7 +12,6 @@
 local function initial_command(path, path_to_activate)
     local julia_code = [[using Nulia; Nulia.start("]] .. path .. [["); import Pkg;]]
     if path_to_activate ~= nil then
-        Pedit(path_to_activate)
         julia_code = julia_code .. [[
         Pkg.activate("]] .. path_to_activate .. [["; io=devnull);]]
     else
@@ -164,12 +163,31 @@ end
 local M = {
     julia_exe = "julia",
     julia_env = julia_file_project_path,
+    julia_opts = {
+        threads = "auto",
+        quiet = true,
+    },
     split = "vnew",
     chan = nil,
     run_id = 1,
 }
 
 local VirtualText = require("nulia.virtual_text")
+
+function M._build_julia_cmd(args)
+    table.insert(args, 1, M.julia_exe)
+
+    local opts = M.julia_opts
+    if opts.quiet then
+        table.insert(args, "-q")
+    end
+
+    if opts.threads ~= nil then
+        table.insert(args, "--threads=" .. opts.threads)
+    end
+
+    return args
+end
 
 -- Starts a Julia process in a side terminal
 function M.start(opts)
@@ -188,13 +206,11 @@ function M.start(opts)
         return
     end
 
-    local cmd = {
-        M.julia_exe,
-        "-q",
+    local cmd = M._build_julia_cmd({
         "--project=" .. julia_project_path(),
         "-e", initial_command(vim.v.servername, julia_env),
         "-i",
-    }
+    })
 
     if type(split) == "string" then
         vim.cmd(split)
@@ -276,17 +292,13 @@ function M.setup(opts)
         return
     end
 
-    for k, _ in pairs(M) do
-        if opts[k] ~= nil then
-            M[k] = opts[k]
-        end
-    end
+    M = vim.tbl_deep_extend("force", M, opts)
 end
 
 -- Installs the Julia dependencies, call it once at install
 function M.instantiate(opts)
     opts = opts or {}
-    local popup = opts.popup or true
+    local split = opts.split or true
 
     local julia_code = [[
       import Pkg;
@@ -300,18 +312,16 @@ function M.instantiate(opts)
       @info "Setup done, have fun!"
     ]]
 
-    local cmd = {
-        M.julia_exe,
-        "-q",
+    local cmd = M._build_julia_cmd({
         "--project=" .. julia_project_path(),
-        "-e",
-        julia_code,
-    }
+        "-e", julia_code,
+    })
 
-    if popup then
-      vim.fn.termopen(cmd)
+    if split then
+        vim.cmd("vnew")
+        vim.fn.termopen(cmd)
     else
-      vim.fn.jobstart(cmd)
+        vim.fn.jobstart(cmd)
     end
 end
 
