@@ -1,6 +1,6 @@
 --[[
 --
---  Nulia.jl is a simple code runner for Julia code
+--   Neige.jl is a simple code runner for Julia code
 -- inside Neovim inspired by the julia-vscode extension
 --
 -- TODO: function to send visual selection
@@ -10,7 +10,7 @@
 --]]
 
 local function initial_command(path, path_to_activate)
-    local julia_code = [[using Nulia; Nulia.start("]] .. path .. [["); import Pkg;]]
+    local julia_code = [[using Neige; Neige.start("]] .. path .. [["); import Pkg;]]
     if path_to_activate ~= nil then
         julia_code = julia_code .. [[
         Pkg.activate("]] .. path_to_activate .. [["; io=devnull);]]
@@ -111,7 +111,7 @@ local function docstringable(node)
   )
 end
 
-local ns = vim.api.nvim_create_namespace("nulia")
+local ns = vim.api.nvim_create_namespace("neige")
 
 -- Extracts the range under the cursor that correspond to the first "toplevel" expression
 local function extract_nodes(opts)
@@ -172,7 +172,7 @@ local M = {
     run_id = 1,
 }
 
-local VirtualText = require("nulia.virtual_text")
+local VirtualText = require("neige.virtual_text")
 
 function M._build_julia_cmd(args)
     table.insert(args, 1, M.julia_exe)
@@ -308,7 +308,7 @@ function M.instantiate(opts)
       Pkg.instantiate();
       Pkg.status();
 
-      import Nulia
+      import Neige
       @info "Setup done, have fun!"
     ]]
 

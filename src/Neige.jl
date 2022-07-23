@@ -1,4 +1,4 @@
-module Nulia
+module Neige
 
 import Neovim
 import Pkg
