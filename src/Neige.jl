@@ -17,6 +17,17 @@ function repr_error(ex)
     String(take!(io))
 end
 
+function nvim_exec_lua(c, a_code, a_args)
+    Neovim.send_request(c, :nvim_exec_lua, Any[a_code, a_args])
+end
+
+function reply_result(c, serial, val)
+    lua_code = """
+    require("neige"):on_response(...)
+    """
+    nvim_exec_lua(c, lua_code, (serial, val))
+end
+
 function reply_value(c, serial, val)
     Neovim.reply_result(c, serial, [true, repr_value(val)])
 end
@@ -35,21 +46,25 @@ function eval_fetch(c, serial, code)
     reply_value(c, serial, res)
 end
 
-function Neovim.on_notify(::Handler, c, name, args)
-    @debug "Got notification" c name args
+#=
+function Neovim.on_request(::Handler, c, serial, name, args)
+    @debug "Got request" c name args
+    Neovim.reply_error(c, serial, "Client cannot handle request, please override `on_request`")
 end
+=#
 
 function Neovim.on_request(::Handler, c, serial, name, args)
-    @debug "Got request" c serial name args
+    codes = only(args)
+    @debug "Got notification" c name serial args
     if name != "eval_fetch"
         Neovim.reply_error(c, serial, "Unhandled operation $name")
     end
-    code = join(only(args), "\n")
+    code = join(codes, "\n")
     eval_fetch(c, serial, code)
 end
 
 function start(nvim_id, socket_path)
-    Neovim.nvim_connect(socket_path, Handler(nvim_id))
+    nvim = Neovim.nvim_connect(socket_path, Handler(nvim_id))
     @debug "Started server" nvim.channel_id
     nothing
 end

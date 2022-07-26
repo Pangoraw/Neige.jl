@@ -127,6 +127,10 @@ local function extract_nodes(opts)
     local debug_hl = opts.debug_jl or false
 
     local node = ts_utils.get_node_at_cursor(winnr)
+    if node == nil then
+        print("error: can't get node at cursor")
+        return {}
+    end
     local parent = node:parent()
     while not toplevel_node(node) do
         node = parent
@@ -188,6 +192,7 @@ local M = {
     chan = nil,
     run_id = 1,
     neige_id = 1,
+    runs = {},
 }
 
 local VirtualText = require("neige.virtual_text")
@@ -216,12 +221,15 @@ function M.start(opts)
 
     opts = opts or {}
     local servername = opts.servername or vim.v.servername
-    local julia_env = opts.julia_env or M.julia_env
+    local julia_env_fn = opts.julia_env or M.julia_env
     local split = opts.split or M.split
     local bufnr = opts.bufnr or 0
 
-    if type(julia_env) == "function" then
-        julia_env = julia_env(bufnr)
+    local julia_env
+    if type(julia_env_fn) == "function" then
+        julia_env = julia_env_fn(bufnr)
+    else
+        julia_env = julia_env_fn
     end
 
     if M.chan ~= nil then
@@ -317,6 +325,9 @@ function M._send_code(opts, code)
         print("error: Julia session is not yet created, call start()")
         return
     end
+
+    -- local run_id = M.run_id
+    M.run_id = M.run_id + 1
 
     local res = vim.rpcrequest(M.chan, "eval_fetch", code)
     if #res ~= 2 then
