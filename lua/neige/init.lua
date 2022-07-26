@@ -209,6 +209,11 @@ end
 
 -- Starts a Julia process in a side terminal
 function M.start(opts)
+    if not fileexists(julia_project_path() .. "/Manifest.toml") then
+        print("Neige.jl: project has not been instantiated, call neige.instantiate()")
+        return
+    end
+
     opts = opts or {}
     local servername = opts.servername or vim.v.servername
     local julia_env = opts.julia_env or M.julia_env
@@ -226,7 +231,7 @@ function M.start(opts)
 
     local cmd = M._build_julia_cmd({
         "--project=" .. julia_project_path(),
-        "-e", initial_command(M.neige_id, vim.v.servername, julia_env),
+        "-e", initial_command(M.neige_id, servername, julia_env),
         "-i",
     })
 
@@ -355,11 +360,6 @@ end
 
 -- Configure parameters
 function M.setup(opts)
-    if not fileexists(julia_project_path() .. "/Manifest.toml") then
-        print("Project has not been instantiated, call instantiate()")
-        return
-    end
-
     M = vim.tbl_deep_extend("force", M, opts)
 end
 
