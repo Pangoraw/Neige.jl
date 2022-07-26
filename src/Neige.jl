@@ -4,10 +4,12 @@ import Neovim
 import Pkg
 import Logging
 
-struct Handler end
+struct Handler
+    nvim_id::Int
+end
 
 repr_value(other) = repr(other)
-repr_value(::Nothing) = ""
+repr_value(::Nothing) = ""
 
 function repr_error(ex)
     io = IOBuffer()
@@ -46,8 +48,8 @@ function Neovim.on_request(::Handler, c, serial, name, args)
     eval_fetch(c, serial, code)
 end
 
-function start(socket_path)
-    Neovim.nvim_connect(socket_path, Handler())
+function start(nvim_id, socket_path)
+    Neovim.nvim_connect(socket_path, Handler(nvim_id))
     @debug "Started server" nvim.channel_id
     nothing
 end

@@ -4,13 +4,12 @@
 -- inside Neovim inspired by the julia-vscode extension
 --
 -- TODO: function to send visual selection
--- TODO: detect julia environment based on current file?
 -- TODO: forward log messages to the file + line
 --
 --]]
 
-local function initial_command(path, path_to_activate)
-    local julia_code = [[using Neige; Neige.start("]] .. path .. [["); import Pkg;]]
+local function initial_command(id, path, path_to_activate)
+    local julia_code = [[using Neige; Neige.start(]] .. id .. [[,"]] .. path .. [["); import Pkg;]]
     if path_to_activate ~= nil then
         julia_code = julia_code .. [[
         Pkg.activate("]] .. path_to_activate .. [["; io=devnull);]]
@@ -97,6 +96,14 @@ local function get_nodes_text(bufnr, nodes)
     return vim.api.nvim_buf_get_text(bufnr, row_start, col_start, row_end, col_end, {})
 end
 
+-- Check that the two nodes are either on the same line or on the exact line next
+local function nodes_contiguous(node, next)
+    local _, _, row_end, _ = node:end_()
+    local row_start, _, _, _ = next:start()
+
+    return (row_start - row_end <= 1)
+end
+
 -- Returns wether or not the node can have a docstring
 -- TODO: support f(x) = x syntax
 local function docstringable(node)
@@ -121,11 +128,7 @@ local function extract_nodes(opts)
 
     local node = ts_utils.get_node_at_cursor(winnr)
     local parent = node:parent()
-    while (
-      parent ~= nil and parent:type() ~= "source_file" -- and
-      -- (not toplevel_node(node) or
-      --  parent:start() == node:start())
-      ) do
+    while not toplevel_node(node) do
         node = parent
         parent = node:parent()
     end
@@ -133,9 +136,23 @@ local function extract_nodes(opts)
     local nodes = {node}
 
     -- Doc strings
+    -- TODO: handle macro calls like Base.@kwdef?
     local maybe_next = node:next_named_sibling()
-    if node:type() == "string_literal" and docstringable(maybe_next) then
+    if (
+        node:type() == "string_literal" and
+        docstringable(maybe_next) and
+        nodes_contiguous(node, maybe_next)
+    ) then
         table.insert(nodes, maybe_next)
+    elseif docstringable(node) then
+        local previous = node:prev_named_sibling()
+        if (
+            previous ~= nil and
+            previous:type() == "string_literal" and
+            nodes_contiguous(previous, node)
+        ) then
+            table.insert(nodes, 1, previous)
+        end
     end
 
     if debug_hl then
@@ -170,6 +187,7 @@ local M = {
     split = "vnew",
     chan = nil,
     run_id = 1,
+    neige_id = 1,
 }
 
 local VirtualText = require("neige.virtual_text")
@@ -208,7 +226,7 @@ function M.start(opts)
 
     local cmd = M._build_julia_cmd({
         "--project=" .. julia_project_path(),
-        "-e", initial_command(vim.v.servername, julia_env),
+        "-e", initial_command(M.neige_id, vim.v.servername, julia_env),
         "-i",
     })
 
@@ -225,19 +243,75 @@ function M.start(opts)
     M.chan = vim.fn.termopen(cmd) + 1
 end
 
+-- Get a ts compatible range of the current visual selection.
+-- from https://github.com/theHamsta/nvim-treesitter/blob/a5f2970d7af947c066fb65aef2220335008242b7/lua/nvim-treesitter/incremental_selection.lua#L22-L30
+--
+-- The range of ts nodes start with 0 and the ending range is exclusive.
+local function visual_selection_range()
+    local _, csrow, cscol, _ = unpack(vim.fn.getpos("'<"))
+    local _, cerow, cecol, _ = unpack(vim.fn.getpos("'>"))
+    if csrow < cerow or (csrow == cerow and cscol <= cecol) then
+        return csrow - 1, cscol - 1, cerow - 1, cecol
+    else
+        return cerow - 1, cecol - 1, csrow - 1, cscol
+    end
+end
+
+function M.send_visual_selection(opts)
+    opts = opts or {}
+    local bufnr = opts.bufnr or 0
+
+    -- https://github.com/nvim-telescope/telescope.nvim/pull/494/files
+    local row_start, col_start, row_end, col_end = visual_selection_range()
+    if col_end == 2147483647 then
+        col_end = -1
+    end
+    local code = vim.api.nvim_buf_get_text(bufnr, row_start, col_start, row_end, col_end, {})
+
+    return M._send_code({
+        bufnr = bufnr,
+        line_num = row_end,
+    }, code)
+end
+
 -- Extract the node under the cursor and sends it to the Julia process for evaluation
 -- TODO: loading indicator like in vscode.
 function M.send_command(opts)
     opts = opts or {}
     local debug_hl = opts.debug_hl or false
-    local bufnr = opts.buf or 0
+    local bufnr = opts.bufnr or 0
+
+    local nodes = extract_nodes({ debug_hl = debug_hl })
+    local code = get_nodes_text(bufnr, nodes)
+
+    local node = nodes[#nodes]
+    local line_num, _, _ = node:end_()
+
+    local maybe_next = node:next_named_sibling()
+
+    local after_fn = function()
+        if maybe_next ~= nil then
+            goto_node(bufnr, maybe_next, false)
+        else
+            goto_node(bufnr, node, true)
+        end
+    end
+
+    return M._send_code({
+        bufnr = bufnr,
+        line_num = line_num,
+        after_fn = after_fn,
+    }, code)
+end
+
+function M._send_code(opts, code)
+    opts = opts or {}
+    local bufnr = opts.bufnr or 0
 
     if M.chan == nil then
         print("error: Julia session is not yet created, call start()")
         return
     end
-    local nodes = extract_nodes({ debug_hl = debug_hl })
-    local code = get_nodes_text(bufnr, nodes)
 
     local res = vim.rpcrequest(M.chan, "eval_fetch", code)
     if #res ~= 2 then
@@ -245,15 +319,12 @@ function M.send_command(opts)
         return
     end
 
-    local node = nodes[#nodes]
-
     local success = res[1]
     local repr = res[2]
-    local line_num, _, _ = node:end_()
 
     local buf_marks = VirtualText.lines[tostring(bufnr)]
     if buf_marks ~= nil then
-        local previous_mark = buf_marks[tostring(line_num)]
+        local previous_mark = buf_marks[tostring(opts.line_num)]
         if previous_mark ~= nil then
             VirtualText:clear(bufnr, previous_mark.markId)
         end
@@ -268,7 +339,7 @@ function M.send_command(opts)
 
     VirtualText:render({
         buf_handle = bufnr,
-        line_num = line_num,
+        line_num = opts.line_num,
         run_id = M.run_id,
         append = false,
         hl = hl,
@@ -277,11 +348,8 @@ function M.send_command(opts)
     })
 
     M.run_id = M.run_id + 1
-    local maybe_next = node:next_named_sibling()
-    if maybe_next ~= nil then
-        goto_node(bufnr, maybe_next, false)
-    else
-        goto_node(bufnr, node, true)
+    if opts.after_fn ~= nil then
+        opts.after_fn()
     end
 end
 
