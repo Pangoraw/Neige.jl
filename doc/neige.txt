@@ -1,0 +1,28 @@
+*neige.txt* Julia executor for Neovim >= 0.8.
+*neige*
+
+Author: Paul Berg <paul@plutojl.org>
+
+License: MIT
+
+==============================================================================
+USAGE                                                             *neige-usage*
+
+To get started with Neige:
+
+ 1. Import the `neige` module and `instantiate` it:
+ >
+    local neige = require("neige")
+    neige.instantiate()                -- call only once at install
+    neige.setup({})                    -- pass configuration
+<
+ 2. Start an instance from the current Julia file
+>
+    neige.start()                      -- start a connected Julia REPL!
+<
+ 3. Send the code under the cursor to the connected instance
+>
+    neige.send_command()
+<
+==============================================================================
+ vim:tw=78:ts=8:noet:ft=help:norl:
