@@ -159,6 +159,16 @@ local function extract_nodes(opts)
         end
     end
 
+    local node = nodes[#nodes]
+    local maybe_next = node:next_sibling()
+    if (
+        maybe_next ~= nil and
+        not maybe_next:named() and
+        maybe_next:type() == ";" 
+    ) then
+        table.insert(nodes, maybe_next)
+    end
+
     if debug_hl then
         for _, n in ipairs(nodes) do
             ts_utils.highlight_node(n, 0, ns, "Comment")

@@ -3,6 +3,7 @@ module Neige
 import Neovim
 import Pkg
 import Logging
+import REPL
 
 struct Handler
     nvim_id::Int
@@ -43,6 +44,11 @@ function eval_fetch(c, serial, code)
         reply_error(c, serial, ex)
         return
     end
+
+    if REPL.ends_with_semicolon(code)
+        res = nothing
+    end
+
     reply_value(c, serial, res)
 end
 
