@@ -159,8 +159,8 @@ local function extract_nodes(opts)
         end
     end
 
-    local node = nodes[#nodes]
-    local maybe_next = node:next_sibling()
+    node = nodes[#nodes]
+    maybe_next = node:next_sibling()
     if (
         maybe_next ~= nil and
         not maybe_next:named() and
@@ -197,6 +197,10 @@ local M = {
     julia_opts = {
         threads = "auto",
         quiet = true,
+    },
+    icons = {
+        failure = "✗",
+        success = "✓",
     },
     split = "vnew",
     chan = nil,
@@ -339,6 +343,28 @@ function M._send_code(opts, code)
     -- local run_id = M.run_id
     M.run_id = M.run_id + 1
 
+    local buf_marks = VirtualText.lines[tostring(bufnr)]
+    if buf_marks ~= nil then
+        local previous_mark = buf_marks[tostring(opts.line_num)]
+        if previous_mark ~= nil then
+            VirtualText:delete(bufnr, previous_mark.markId, opts.line_num)
+        end
+    end
+
+    local loading_mark = VirtualText:render({
+        buf_handle = bufnr,
+        line_num = opts.line_num,
+        run_id = M.run_id,
+        append = false,
+        hl = "DiagnosticInfo",
+        text = "",
+        icon = "o",
+    })
+    if loading_mark == nil then
+        print("error: failed to render loading mark")
+        return
+    end
+
     local res = vim.rpcrequest(M.chan, "eval_fetch", code)
     if #res ~= 2 then
         print("error: wrong return value")
@@ -348,21 +374,14 @@ function M._send_code(opts, code)
     local success = res[1]
     local repr = res[2]
 
-    local buf_marks = VirtualText.lines[tostring(bufnr)]
-    if buf_marks ~= nil then
-        local previous_mark = buf_marks[tostring(opts.line_num)]
-        if previous_mark ~= nil then
-            VirtualText:clear(bufnr, previous_mark.markId)
-        end
-    end
-
     local hl = "DiagnosticInfo"
-    local icon = "✓"
+    local icon = M.icons.success
     if not success then
         hl = "DiagnosticError"
-        icon = "✗"
+        icon = M.icons.failure
     end
 
+    VirtualText:delete(bufnr, loading_mark.mark_id, opts.line_num)
     VirtualText:render({
         buf_handle = bufnr,
         line_num = opts.line_num,
@@ -374,7 +393,7 @@ function M._send_code(opts, code)
     })
 
     M.run_id = M.run_id + 1
-    if opts.after_fn ~= nil then
+    if opts.after_fn ~= nil and type(opts.after_fn) == "function" then
         opts.after_fn()
     end
 end
