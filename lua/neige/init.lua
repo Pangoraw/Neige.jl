@@ -8,8 +8,12 @@
 --
 --]]
 
-local function initial_command(id, path, path_to_activate)
-    local julia_code = [[using Neige; Neige.start(]] .. id .. [[,"]] .. path .. [["); import Pkg;]]
+local function initial_command(id, path, path_to_activate, load_revise)
+    local revise = ""
+    if load_revise then
+        revise = "using Revise;"
+    end
+    local julia_code = revise .. [[using Neige; Neige.start(]] .. id .. [[,"]] .. path .. [["); import Pkg;]]
     if path_to_activate ~= nil then
         julia_code = julia_code .. [[
         Pkg.activate("]] .. path_to_activate .. [["; io=devnull);]]
@@ -128,8 +132,8 @@ local function extract_nodes(opts)
 
     local node = ts_utils.get_node_at_cursor(winnr)
     if node == nil then
-        print("error: can't get node at cursor")
-        return {}
+        print("error: cannot get node at cursor")
+        return nil
     end
     local parent = node:parent()
     while not toplevel_node(node) do
@@ -201,7 +205,9 @@ local M = {
     icons = {
         failure = "✗",
         success = "✓",
+        loading = "🗘",
     },
+    load_revise = false,
     split = "vnew",
     chan = nil,
     run_id = 1,
@@ -253,7 +259,7 @@ function M.start(opts)
 
     local cmd = M._build_julia_cmd({
         "--project=" .. julia_project_path(),
-        "-e", initial_command(M.neige_id, servername, julia_env),
+        "-e", initial_command(M.neige_id, servername, julia_env, M.load_revise),
         "-i",
     })
 
@@ -263,11 +269,7 @@ function M.start(opts)
         split()
     end
 
-    -- TODO: this is a bit of a hack, can i specify the chan id at startup?
-    --       if it is not possible, the julia side should notify with the
-    --       channel id using nvim_lua_eval, this way we can block requests
-    --       until the channel is actually open (due to Julia side delay).
-    M.chan = vim.fn.termopen(cmd) + 1
+    vim.fn.termopen(cmd)
 end
 
 -- Get a ts compatible range of the current visual selection.
@@ -284,6 +286,7 @@ local function visual_selection_range()
     end
 end
 
+-- TODO: fix
 function M.send_visual_selection(opts)
     opts = opts or {}
     local bufnr = opts.bufnr or 0
@@ -302,13 +305,15 @@ function M.send_visual_selection(opts)
 end
 
 -- Extract the node under the cursor and sends it to the Julia process for evaluation
--- TODO: loading indicator like in vscode.
 function M.send_command(opts)
     opts = opts or {}
     local debug_hl = opts.debug_hl or false
     local bufnr = opts.bufnr or 0
 
     local nodes = extract_nodes({ debug_hl = debug_hl })
+    if nodes == nil then
+        return
+    end
     local code = get_nodes_text(bufnr, nodes)
 
     local node = nodes[#nodes]
@@ -316,7 +321,7 @@ function M.send_command(opts)
 
     local maybe_next = node:next_named_sibling()
 
-    local after_fn = function()
+    local before_eval_fn = function()
         if maybe_next ~= nil then
             goto_node(bufnr, maybe_next, false)
         else
@@ -324,11 +329,13 @@ function M.send_command(opts)
         end
     end
 
-    return M._send_code({
+    local thread = coroutine.wrap(M._send_code)
+    local run_id = thread({
         bufnr = bufnr,
         line_num = line_num,
-        after_fn = after_fn,
+        before_eval_fn = before_eval_fn,
     }, code)
+    M.runs[run_id] = thread
 end
 
 function M._send_code(opts, code)
@@ -341,7 +348,8 @@ function M._send_code(opts, code)
     end
 
     -- local run_id = M.run_id
-    M.run_id = M.run_id + 1
+    local run_id = M.run_id + 1
+    M.run_id = run_id
 
     local buf_marks = VirtualText.lines[tostring(bufnr)]
     if buf_marks ~= nil then
@@ -358,14 +366,20 @@ function M._send_code(opts, code)
         append = false,
         hl = "DiagnosticInfo",
         text = "",
-        icon = "o",
+        icon = M.icons.loading,
     })
     if loading_mark == nil then
         print("error: failed to render loading mark")
         return
     end
 
-    local res = vim.rpcrequest(M.chan, "eval_fetch", code)
+    if opts.before_eval_fn ~= nil and type(opts.before_eval_fn) == "function" then
+        opts.before_eval_fn()
+    end
+
+    vim.rpcnotify(M.chan, "eval_fetch", run_id, code)
+    local res = coroutine.yield(run_id)
+
     if #res ~= 2 then
         print("error: wrong return value")
         return
@@ -393,9 +407,19 @@ function M._send_code(opts, code)
     })
 
     M.run_id = M.run_id + 1
-    if opts.after_fn ~= nil and type(opts.after_fn) == "function" then
-        opts.after_fn()
-    end
+end
+
+function M.interrupt()
+    vim.rpcnotify(M.chan, "interrupt")
+end
+
+function M:_set_chan_id(chan_id)
+    M.chan = chan_id
+end
+
+function M.on_response(run_id, res)
+    local thread = M.runs[run_id]
+    return thread(res)
 end
 
 -- Configure parameters

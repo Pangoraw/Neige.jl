@@ -49,10 +49,11 @@ To have fun with Neige, you will need the following:
 
 ## TODOs
 
- - [ ] Make eval request asynchronous (it currently blocks the editor, not ideal for Julia's compile times)
+ - [x] Make eval request asynchronous (it currently blocks the editor, not ideal for Julia's compile times)
  - [ ] Highlight stack trace lines
  - [ ] Function to send visual selection
- - [ ] Improve node handling
+ - [ ] Improve node handling (when there are no node under the cursor)
+ - [ ] Improve virtual text cleanup when lines are edited
 
 ## Aknowledgments
 
