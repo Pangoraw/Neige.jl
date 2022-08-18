@@ -120,16 +120,45 @@ end
 
 local ns = vim.api.nvim_create_namespace("neige")
 
+local nts_utils = require("neige.ts_utils")
+local function get_node_at_cursor_or_move(winnr, tries)
+    tries = tries or 0
+    if tries > 10 then
+        return nil
+    end
+
+    local node = nts_utils.get_node_at_cursor(winnr, { enforce_named = false, })
+    if node ~= nil and not node:named() then
+        node = ts_utils.get_next_node(node, true, true)
+    end
+
+    if node == nil then
+        local cursor = vim.api.nvim_win_get_cursor(winnr)
+        local bufnr = vim.api.nvim_win_get_buf(winnr)
+        local current_line = vim.api.nvim_buf_get_lines(bufnr, cursor[1], cursor[1] + 1, false)[1]
+        local after = string.sub(current_line, cursor[2] + 1, -1)
+        local _, space_count = string.gsub(after, " ", " ")
+
+        if string.len(after) == space_count then -- only white spaces
+            vim.fn.feedkeys(")")
+        else
+            vim.fn.feedkeys("w")
+        end
+
+        return get_node_at_cursor_or_move(winnr, tries + 1)
+    end
+    return node
+end
+
 -- Extracts the range under the cursor that correspond to the first "toplevel" expression
 local function extract_nodes(opts)
     opts = opts or {}
-    local winnr = opts.winnr or 0
+    local winnr = opts.winnr or vim.api.nvim_get_current_win()
     local debug_hl = opts.debug_jl or false
 
-    local node = ts_utils.get_node_at_cursor(winnr)
+    local node = get_node_at_cursor_or_move(winnr)
     if node == nil then
-        print("error: can't get node at cursor")
-        return {}
+        return
     end
     local parent = node:parent()
     while not toplevel_node(node) do
@@ -164,7 +193,7 @@ local function extract_nodes(opts)
     if (
         maybe_next ~= nil and
         not maybe_next:named() and
-        maybe_next:type() == ";" 
+        maybe_next:type() == ";"
     ) then
         table.insert(nodes, maybe_next)
     end
@@ -305,6 +334,9 @@ function M.send_command(opts)
     local bufnr = opts.bufnr or 0
 
     local nodes = extract_nodes({ debug_hl = debug_hl })
+    if nodes == nil then
+        return
+    end
     local code = get_nodes_text(bufnr, nodes)
 
     local node = nodes[#nodes]
