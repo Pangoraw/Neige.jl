@@ -84,12 +84,13 @@ function start(nvim_id, socket_path)
                 while isnothing(nvim[])
                     sleep(.5)
                 end
-                eval_fetch(nvim[], serial, code)
+                Base.@invokelatest eval_fetch(nvim[], serial, code)
             catch e
                 if e isa InterruptException
                     continue
                 end
-                rethrow(e)
+                @warn "Error during evaluation task" exception=(e, catch_backtrace())
+                continue
             end
         end
     end
