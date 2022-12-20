@@ -409,6 +409,11 @@ function M._send_code(opts, code)
     M.run_id = M.run_id + 1
 end
 
+function M.clear_virtual_texts(bufnr)
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    VirtualText:clearAll(bufnr)
+end
+
 function M.interrupt()
     vim.rpcnotify(M.chan, "interrupt")
 end
