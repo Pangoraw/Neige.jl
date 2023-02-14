@@ -79,7 +79,7 @@ function start(nvim_id, socket_path)
         while isopen(chan)
             try
                 args = take!(chan)
-                serial, codes = args
+                serial, codes = first(args)
                 code = join(codes, "\n")
                 while isnothing(nvim[])
                     sleep(.5)
