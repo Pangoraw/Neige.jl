@@ -295,7 +295,7 @@ function M.start(opts)
 
     local cmd = M._build_julia_cmd({
         "--project=" .. neige_project_path(),
-        "-e", initial_command(M.neige_id, servername, julia_env, M.load_revise),
+        "-e", initial_command(M.neige_id, servername, julia_env, M.julia_load_revise),
         "-i",
     })
 
