@@ -7,7 +7,6 @@
 -- TODO: forward log messages to the file + line
 --
 --]]
-
 local function initial_command(id, path, path_to_activate, load_revise)
     local revise = ""
     if load_revise then
@@ -30,8 +29,8 @@ end
 
 -- http://stackoverflow.com/questions/6380820/ddg#23535333
 local function script_path()
-   local str = debug.getinfo(2, "S").source:sub(2)
-   return str:match("(.*/)")
+    local str = debug.getinfo(2, "S").source:sub(2)
+    return str:match("(.*/)")
 end
 
 -- Splits the path and return the parent path
@@ -56,7 +55,7 @@ local function folder_path()
     return get_parent(script_path())
 end
 
-local function julia_project_path()
+local function neige_project_path()
     return folder_path() .. "/../../"
 end
 
@@ -80,9 +79,14 @@ end
 
 
 local ts_utils = require("nvim-treesitter.ts_utils")
-local function toplevel_node(node)
+local function toplevel_node(node, ft)
+    local toplevel_for_ft = ({
+            python = "module",
+            julia = "source_file",
+        })[ft]
+
     local parent = node:parent()
-    return parent == nil or parent:type() == "source_file"
+    return parent == nil or parent:type() == toplevel_for_ft
 end
 
 local function get_nodes_text(bufnr, nodes)
@@ -111,15 +115,15 @@ end
 -- Returns wether or not the node can have a docstring
 -- TODO: support f(x) = x syntax
 local function docstringable(node)
-  if node == nil then
-      return false
-  end
-  local type = node:type()
-  return (
-      type == "function_definition" or
-      type == "struct_definition" or
-      type == "module_definition"
-  )
+    if node == nil then
+        return false
+    end
+    local type = node:type()
+    return (
+        type == "function_definition" or
+        type == "struct_definition" or
+        type == "module_definition"
+        )
 end
 
 local ns = vim.api.nvim_create_namespace("neige")
@@ -128,7 +132,8 @@ local ns = vim.api.nvim_create_namespace("neige")
 local function extract_nodes(opts)
     opts = opts or {}
     local winnr = opts.winnr or 0
-    local debug_hl = opts.debug_jl or false
+    local debug_hl = opts.debug_hl or false
+    local ft = vim.bo.filetype
 
     local node = ts_utils.get_node_at_cursor(winnr)
     if node == nil then
@@ -136,12 +141,12 @@ local function extract_nodes(opts)
         return nil
     end
     local parent = node:parent()
-    while not toplevel_node(node) do
+    while not toplevel_node(node, ft) do
         node = parent
         parent = node:parent()
     end
 
-    local nodes = {node}
+    local nodes = { node }
 
     -- Doc strings
     -- TODO: handle macro calls like Base.@kwdef?
@@ -150,7 +155,7 @@ local function extract_nodes(opts)
         node:type() == "string_literal" and
         docstringable(maybe_next) and
         nodes_contiguous(node, maybe_next)
-    ) then
+        ) then
         table.insert(nodes, maybe_next)
     elseif docstringable(node) then
         local previous = node:prev_named_sibling()
@@ -158,7 +163,7 @@ local function extract_nodes(opts)
             previous ~= nil and
             previous:type() == "string_literal" and
             nodes_contiguous(previous, node)
-        ) then
+            ) then
             table.insert(nodes, 1, previous)
         end
     end
@@ -168,8 +173,8 @@ local function extract_nodes(opts)
     if (
         maybe_next ~= nil and
         not maybe_next:named() and
-        maybe_next:type() == ";" 
-    ) then
+        maybe_next:type() == ";"
+        ) then
         table.insert(nodes, maybe_next)
     end
 
@@ -196,6 +201,7 @@ end
 -- Module def
 
 local M = {
+    python_exe = "python",
     julia_exe = "julia",
     julia_env = julia_file_project_path,
     julia_opts = {
@@ -232,14 +238,44 @@ function M._build_julia_cmd(args)
     return args
 end
 
+function M.start_python(opts)
+    local split = opts.split or M.split
+    local servername = opts.servername or vim.v.servername
+
+    if type(split) == "string" then
+        vim.cmd(split)
+    else
+        split()
+    end
+
+    vim.fn.termopen({
+        M.python_exe,
+        "-i",
+        neige_project_path() .. "/runner.py",
+        servername,
+    })
+end
+
 -- Starts a Julia process in a side terminal
 function M.start(opts)
-    if not fileexists(julia_project_path() .. "/Manifest.toml") then
+    opts = opts or {}
+    local ft = vim.bo.filetype
+
+    if ft == "python" then
+        M.start_python(opts)
+        return
+    end
+
+    if ft ~= "julia" then
+        print("Neige.jl: the filetype " .. tostring(ft) .. " is not supported")
+        return
+    end
+
+    if not fileexists(neige_project_path() .. "/Manifest.toml") then
         print("Neige.jl: project has not been instantiated, call neige.instantiate()")
         return
     end
 
-    opts = opts or {}
     local servername = opts.servername or vim.v.servername
     local julia_env_fn = opts.julia_env or M.julia_env
     local split = opts.split or M.split
@@ -258,7 +294,7 @@ function M.start(opts)
     end
 
     local cmd = M._build_julia_cmd({
-        "--project=" .. julia_project_path(),
+        "--project=" .. neige_project_path(),
         "-e", initial_command(M.neige_id, servername, julia_env, M.load_revise),
         "-i",
     })
@@ -377,7 +413,7 @@ function M._send_code(opts, code)
         opts.before_eval_fn()
     end
 
-    vim.rpcnotify(M.chan, "eval_fetch", run_id, code)
+    vim.rpcnotify(M.chan, "eval_fetch", { run_id, code })
     local res = coroutine.yield(run_id)
 
     if #res ~= 2 then
@@ -450,7 +486,7 @@ function M.instantiate(opts)
     ]]
 
     local cmd = M._build_julia_cmd({
-        "--project=" .. julia_project_path(),
+        "--project=" .. neige_project_path(),
         "-e", julia_code,
     })
 
