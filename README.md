@@ -5,7 +5,7 @@
 
 Neige is a simple evaluator of Python/Julia code using tree-sitter to match expressions under the cursor and send them to a connected session. The experience is highly inspired by the awesome [julia-vscode extension](https://www.julia-vscode.org/).
 
-![neige_demo](https://user-images.githubusercontent.com/9824244/181382882-a00b45a0-0814-496b-a5ef-2b877427fb8a.gif)
+[Screencast from 15-02-2023 14:18:16.webm](https://user-images.githubusercontent.com/9824244/219038564-4e493cc3-9fd5-4450-a098-ceec4fb41135.webm)
 
 
 ## Usage
