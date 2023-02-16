@@ -22,7 +22,7 @@ def main():
 
     def notification_cb(type: str, args):
         if type != "eval_fetch":
-            raise NotImplemented(type)
+            raise NotImplementedError(type)
 
         serial, codelines = args[0]
         code = "\n".join(codelines)
