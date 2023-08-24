@@ -168,14 +168,23 @@ local function extract_nodes(opts)
         end
     end
 
-    node = nodes[#nodes]
-    maybe_next = node:next_sibling()
-    if (
-        maybe_next ~= nil and
-        not maybe_next:named() and
-        maybe_next:type() == ";"
-        ) then
-        table.insert(nodes, maybe_next)
+    while true do
+        node = nodes[#nodes]
+        maybe_next = node:next_sibling()
+        if (
+            maybe_next ~= nil and
+            not maybe_next:named() and
+            maybe_next:type() == ";"
+            ) then
+            table.insert(nodes, maybe_next)
+        elseif (node:type() == "comment" or
+                node:type() == "line_comment") and
+               (maybe_next:type() == "comment" or
+                maybe_next:type() == "line_comment") then
+            table.insert(nodes, maybe_next)
+        else
+            break
+        end
     end
 
     if debug_hl then
