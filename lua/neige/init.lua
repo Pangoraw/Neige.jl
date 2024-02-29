@@ -222,6 +222,11 @@ local M = {
         success = "✓",
         loading = "🗘",
     },
+    hl = {
+        failure = "DiagnosticError",
+        success = "DiagnosticInfo",
+        loading = "DiagnosticInfo",
+    },
     load_revise = false,
     split = "vnew",
     chan = nil,
@@ -414,7 +419,7 @@ function M._send_code(opts, code)
         line_num = opts.line_num,
         run_id = M.run_id,
         append = false,
-        hl = "DiagnosticInfo",
+        hl = M.hl.loading,
         text = "",
         icon = M.icons.loading,
     })
@@ -438,10 +443,10 @@ function M._send_code(opts, code)
     local success = res[1]
     local repr = res[2]
 
-    local hl = "DiagnosticInfo"
+    local hl = M.hl.success
     local icon = M.icons.success
     if not success then
-        hl = "DiagnosticError"
+        hl = M.hl.failure
         icon = M.icons.failure
     end
 

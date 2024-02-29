@@ -43,6 +43,11 @@ require("neige").setup({
         success = "✓",
         loading = "🗘",
     },
+    hl = {
+        failure = "DiagnosticError",
+        success = "DiagnosticInfo",
+        loading = "DiagnosticInfo",
+    },
     split = "vnew",
 })
 ```
