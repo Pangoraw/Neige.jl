@@ -384,13 +384,18 @@ function M.send_command(opts)
         end
     end
 
-    local thread = coroutine.wrap(M._send_code)
-    local run_id = thread({
-        bufnr = bufnr,
-        line_num = line_num,
-        before_eval_fn = before_eval_fn,
-    }, code)
-    M.runs[run_id] = thread
+	local thread = coroutine.wrap(M._send_code)
+	local run_id = thread({
+		bufnr = bufnr,
+		line_num = line_num,
+		before_eval_fn = before_eval_fn,
+	}, code)
+    -- skip inline comments instead of evaluating them
+    if maybe_next:type() == "line_comment" then
+        local row, col, _ = maybe_next:end_()
+        vim.api.nvim_win_set_cursor(0, { row + 2, 0 })
+    end
+		M.runs[run_id] = thread
 end
 
 function M._send_code(opts, code)
