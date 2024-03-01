@@ -139,6 +139,13 @@ local function extract_nodes(opts)
     if node == nil then
         print("error: cannot get node at cursor")
         return nil
+	elseif node:type() == "source_file" then
+		print("error: cursor not on valid node")
+
+		local row, _ = table.unpack(vim.api.nvim_win_get_cursor(winnr))
+		vim.api.nvim_win_set_cursor(winnr, { row, 0 })
+
+		return nil
     end
     local parent = node:parent()
     while not toplevel_node(node, ft) do
