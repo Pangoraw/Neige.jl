@@ -139,13 +139,13 @@ local function extract_nodes(opts)
     if node == nil then
         print("error: cannot get node at cursor")
         return nil
-	elseif node:type() == "source_file" then
-		print("error: cursor not on valid node")
+    elseif node:type() == "source_file" then
+        print("error: cursor not on valid node")
 
-		local row, _ = table.unpack(vim.api.nvim_win_get_cursor(winnr))
-		vim.api.nvim_win_set_cursor(winnr, { row, 0 })
+        local row, _ = table.unpack(vim.api.nvim_win_get_cursor(winnr))
+        vim.api.nvim_win_set_cursor(winnr, { row, 0 })
 
-		return nil
+        return nil
     end
     local parent = node:parent()
     while not toplevel_node(node, ft) do
@@ -391,18 +391,18 @@ function M.send_command(opts)
         end
     end
 
-	local thread = coroutine.wrap(M._send_code)
-	local run_id = thread({
-		bufnr = bufnr,
-		line_num = line_num,
-		before_eval_fn = before_eval_fn,
-	}, code)
+    local thread = coroutine.wrap(M._send_code)
+    local run_id = thread({
+        bufnr = bufnr,
+        line_num = line_num,
+        before_eval_fn = before_eval_fn,
+    }, code)
     -- skip inline comments instead of evaluating them
     if maybe_next:type() == "line_comment" then
         local row, col, _ = maybe_next:end_()
         vim.api.nvim_win_set_cursor(0, { row + 2, 0 })
     end
-		M.runs[run_id] = thread
+    M.runs[run_id] = thread
 end
 
 function M._send_code(opts, code)
