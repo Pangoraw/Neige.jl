@@ -351,12 +351,29 @@ function M.send_visual_selection(opts)
     if col_end == 2147483647 then
         col_end = -1
     end
-    local code = vim.api.nvim_buf_get_text(bufnr, row_start, col_start, row_end, col_end, {})
 
-    return M._send_code({
+    local code = vim.api.nvim_buf_get_text(
+        bufnr, row_start, col_start, row_start, col_end, {}
+    )
+    code[1] = string.gsub(code[1], ";*%s*#.*", "")
+
+    if row_start ~= row_end then
+        code[1] = code[1] .. ";"
+        local row_diff = row_end - row_start
+        for i = 1,row_diff do
+            code[1] = code[1] .. unpack(vim.api.nvim_buf_get_text(
+                bufnr, row_start + i, col_start, row_start + i, col_end, {}
+            ))
+            code[1] = string.gsub(code[1], ";*%s*#.*", "") .. ";"
+        end
+    end
+
+    local thread = coroutine.wrap(M._send_code)
+    run_id = thread({
         bufnr = bufnr,
         line_num = row_end,
     }, code)
+    M.runs[run_id] = thread
 end
 
 -- Extract the node under the cursor and sends it to the Julia process for evaluation
