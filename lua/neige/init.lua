@@ -7,6 +7,37 @@
 -- TODO: forward log messages to the file + line
 --
 --]]
+
+
+-- Module def
+local M = {
+    python_exe = "python",
+    julia_exe = "julia",
+    julia_env = julia_file_project_path,
+    julia_opts = {
+        threads = "auto",
+        quiet = true,
+    },
+    icons = {
+        failure = "✗",
+        success = "✓",
+        loading = "🗘",
+    },
+    hl = {
+        failure = "DiagnosticError",
+        success = "DiagnosticInfo",
+        loading = "DiagnosticInfo",
+    },
+    load_revise = false,
+    split = "vnew",
+    chan = nil,
+    run_id = 1,
+    neige_id = 1,
+    runs = {},
+    clear_on_start = false,
+    debug_logging = false,
+}
+
 local function initial_command(id, path, path_to_activate, load_revise)
     local revise = ""
     if load_revise then
@@ -19,6 +50,16 @@ local function initial_command(id, path, path_to_activate, load_revise)
     else
         julia_code = julia_code .. [[;Pkg.activate(; io=devnull);]]
     end
+
+    if M.debug_logging == true then
+        julia_code = julia_code .. [[
+            using Logging;global_logger(ConsoleLogger(stderr, Logging.Debug));
+        ]]
+    end
+    if M.clear_on_start == true then
+        julia_code = julia_code .. [[print("\033c")]]
+    end
+
     return julia_code
 end
 
@@ -206,34 +247,6 @@ local function goto_node(bufnr, node, goto_end)
         vim.api.nvim_win_set_cursor(bufnr, { row + 1, col })
     end
 end
-
--- Module def
-
-local M = {
-    python_exe = "python",
-    julia_exe = "julia",
-    julia_env = julia_file_project_path,
-    julia_opts = {
-        threads = "auto",
-        quiet = true,
-    },
-    icons = {
-        failure = "✗",
-        success = "✓",
-        loading = "🗘",
-    },
-    hl = {
-        failure = "DiagnosticError",
-        success = "DiagnosticInfo",
-        loading = "DiagnosticInfo",
-    },
-    load_revise = false,
-    split = "vnew",
-    chan = nil,
-    run_id = 1,
-    neige_id = 1,
-    runs = {},
-}
 
 function M.test()
     local nodes = extract_nodes({})
@@ -516,5 +529,12 @@ function M.instantiate(opts)
         vim.fn.jobstart(cmd)
     end
 end
+
+vim.cmd([[
+    command! NeigeStart lua require("neige").start({})
+    command! NeigeEvalExpr lua require("neige").send_command({})
+    command! NeigeEvalVisual lua require("neige").send_visual_selection({})
+    command! NeigeClearText lua require("neige").clear_virtual_texts()
+]])
 
 return M

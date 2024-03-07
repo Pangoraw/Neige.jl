@@ -49,24 +49,22 @@ require("neige").setup({
         loading = "DiagnosticInfo",
     },
     split = "vnew",
+    clear_on_start = false,
 })
 ```
 
 ### Running
 
-After having installed Neige, a new Python/Julia REPL can be started using the `neige.start(opts)` function which will split the newly created REPL in a new pane.
+After having installed Neige, a new Python/Julia REPL can be started using the `:NeigeStart` command which will split the newly created REPL in a new pane.
+
+When the REPL is created, expressions can be sent to the REPL using the `:NeigeEvalExpr` command. It is recommended to map this command to the <kbd>Shift</kbd> + <kbd>Enter</kbd> bindings to mimic the vscode extension.
+The last two mappings for starting Neige and clearing the virtual texts are also recommended.
 
 ```lua
-local neige = require("neige")
-neige.start({})
-```
-
-When the REPL is created, expressions can be send to the REPL using the `neige.send_command(opts)` function. It is recommended to map this function call to the <kbd>Shift</kbd> + <kbd>Enter</kbd> bindings to mimic the vscode extension.
-
-```lua
-vim.api.keymap.set('n', '<s-cr>', function()
-    neige.send_command({})
-end, { noremap = true })
+vim.keymap.set('n', '<s-cr>', [[:NeigeEvalExpr<CR>]], { noremap = true})
+vim.keymap.set('v', '<s-cr>', [[:<C-U>NeigeEvalVisual<CR>]], { noremap = true})
+vim.keymap.set('n', '<leader>ns', [[:NeigeStart<CR>]])
+vim.keymap.set('n', '<leader>nc', [[:NeigeClearText<CR>]])
 ```
 
 ## Dependencies
@@ -93,6 +91,6 @@ For using in Julia scripts:
  - [ ] Improve node handling (when there are no node under the cursor)
  - [ ] Improve virtual text cleanup when lines are edited
 
-## Aknowledgments
+## Acknowledgements
 
  - [lab.nvim](https://github.com/0x100101/lab.nvim/) - The virtual text implementation of Neige is currently copy-pasted from lab.
