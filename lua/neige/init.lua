@@ -364,12 +364,23 @@ function M.send_visual_selection(opts)
     if col_end == 2147483647 then
         col_end = -1
     end
-    local code = vim.api.nvim_buf_get_text(bufnr, row_start, col_start, row_end, col_end, {})
 
-    return M._send_code({
-        bufnr = bufnr,
-        line_num = row_end,
-    }, code)
+    local row_diff = row_end - row_start
+    for i = 0,row_diff do
+        local code = vim.api.nvim_buf_get_text(
+            bufnr, row_start + i, col_start, row_start + i, col_end, {}
+        )
+        -- strips inline comments with and without preceding space in the line
+        code[1] = string.gsub(unpack(code), "%s*#.*", "")
+
+        local row = row_start + i
+        local thread = coroutine.wrap(M._send_code)
+        run_id = thread({
+            bufnr = bufnr,
+            line_num = row,
+        }, code)
+        M.runs[run_id] = thread
+    end
 end
 
 -- Extract the node under the cursor and sends it to the Julia process for evaluation
